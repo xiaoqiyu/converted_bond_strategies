@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 
 
 class MonteCarlo:
-    def __init__(self, S0, K, T, r, q, sigma, kappa=0.0, theta=0.0, xi=0.0, rho=0.0, V0=0.0,
+    def __init__(self, S0, K, T, r, q, sigma, xi=0.0, V0=0.0,
                  underlying_process="geometric brownian motion"):
         self.underlying_process = underlying_process
         self.S0 = S0
@@ -22,12 +22,8 @@ class MonteCarlo:
         self.r = r
         self.q = q
         self.sigma = sigma
-        # self.kappa = kappa
-        # self.theta = theta
-        # self.rho = rho
         self.V0 = V0
-        self.xi = xi
-
+        # self.xi = xi
         self.value_results = None
 
     # view antithetic variates as a option of simulation method to reduce the variance
@@ -154,7 +150,7 @@ class MonteCarlo:
         exercise_matrix = np.zeros(price_matrix.shape, dtype=bool)
         american_values_matrix = np.zeros(price_matrix.shape)
 
-        def __calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df, onlyITM=False):
+        def _calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df, onlyITM=False):
             exercise_values_t = payoff_fun(sub_price_matrix[:, 0])
             ITM_filter = exercise_values_t > 0
             OTM_filter = exercise_values_t <= 0
@@ -179,12 +175,16 @@ class MonteCarlo:
             exp_holding_values_t[ITM_filter] = np.dot(ITM_A_matrix, lr.coef_.T)[:, 0]  # E[g_tau|Fi] only ITM
 
             if np.sum(
-                    OTM_filter):  # if no trial falls into the OTM region it would cause empty OTM_A_Matrix and OTM_b_Matrix, and only ITM was applicable. In this step, we are going to estimate the OTM American values E[g_tau|Fi].
+                    OTM_filter):
+                # if no trial falls into the OTM region it would cause empty OTM_A_Matrix and OTM_b_Matrix,
+                # and only ITM was applicable. In this step, we are going to estimate the OTM American values
+                # E[g_tau|Fi].
                 if onlyITM:
                     # Original LSM
                     exp_holding_values_t[OTM_filter] = np.nan
                 else:
-                    # non-conformed approximation: do not assure the continuity of the approximation (regression in two region without iterpolation)
+                    # non-conformed approximation: do not assure the continuity of the approximation (regression
+                    # in two region without iterpolation)
                     OTM_A_matrix = A_matrix[OTM_filter, :]
                     OTM_b_matrix = b_matrix[OTM_filter, :]
                     lr.fit(OTM_A_matrix, OTM_b_matrix)
@@ -194,9 +194,9 @@ class MonteCarlo:
             american_values_t = np.maximum(exp_holding_values_t, exercise_values_t)
             return american_values_t
 
-        if (option_type == "c"):
+        if option_type == "c":
             payoff_fun = lambda x: np.maximum(x - K, 0)
-        elif (option_type == "p"):
+        elif option_type == "p":
             payoff_fun = lambda x: np.maximum(K - x, 0)
 
         # when contract is at the maturity
@@ -204,14 +204,14 @@ class MonteCarlo:
         exercise_values_t = payoff_fun(stock_prices_t)
         holding_values_t = exercise_values_t
         american_values_matrix[:, -1] = exercise_values_t
-        # TODO exercise_matrix changes
+        # TODO check exercise_matrix changes
         exercise_matrix[:, -1] = 1
 
         # before maturaty
         for i in np.arange(n_steps)[:0:-1]:
             sub_price_matrix = price_matrix[:, i:]
             sub_exercise_matrix = exercise_matrix[:, i:]
-            american_values_t = __calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df,
+            american_values_t = _calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df,
                                                        onlyITM)
             american_values_matrix[:, i] = american_values_t
 
@@ -270,21 +270,22 @@ if __name__ == '__main__':
     strike = 10
     stock_price = 8
     V0 = 0.010201
-    kappa = 6.21
-    theta = 0.019
-    xi = 0.61
-    rho = -0.7
+    # kappa = 6.21
+    # theta = 0.019
+    # xi = 0.61
+    # rho = -0.7
 
     n_trials = 1000
     n_steps = 20
     func_list = [lambda x: x ** 0, lambda x: x]  # basis for OHMC part
     option_type = 'p'
     mc = MonteCarlo(S0=stock_price, K=strike, T=time_to_maturity, r=risk_free_rate, q=dividend, sigma=volatility,
-                    kappa=kappa, theta=theta, xi=xi, rho=rho, V0=V0, underlying_process="geometric brownian motion")
+                    V0=V0, underlying_process="geometric brownian motion")
     price_matrix = mc.simulate(n_trials=n_trials, n_steps=n_steps, boundaryScheme="Higham and Mao")
     print(price_matrix)
     price_matrix = np.array(price_matrix)
     mc.price_matrix = price_matrix
+    # TODO  func_lst: no x**2?
     mc.LSM(option_type=option_type, func_list=[lambda x: x ** 0, lambda x: x], onlyITM=False, buy_cost=0.0,
            sell_cost=0.0)
     ret = mc.MCPricer(option_type=option_type, isAmerican=True)
