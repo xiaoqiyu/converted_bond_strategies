@@ -8,7 +8,6 @@
 @desc:
 '''
 
-from model_processing.monte_carlo import MonteCarlo
 
-
-
+def handle_terms():
+    pass

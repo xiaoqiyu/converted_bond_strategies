@@ -12,9 +12,9 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 
 
+# https://www.investopedia.com/articles/07/montecarlo.asp
 class MonteCarlo:
-    def __init__(self, S0, K, T, r, q, sigma, xi=0.0, V0=0.0,
-                 underlying_process="geometric brownian motion"):
+    def __init__(self, S0, K, T, r, q, sigma, underlying_process="geometric brownian motion"):
         self.underlying_process = underlying_process
         self.S0 = S0
         self.K = K
@@ -22,8 +22,6 @@ class MonteCarlo:
         self.r = r
         self.q = q
         self.sigma = sigma
-        self.V0 = V0
-        # self.xi = xi
         self.value_results = None
 
     # view antithetic variates as a option of simulation method to reduce the variance
@@ -35,11 +33,11 @@ class MonteCarlo:
         self.n_steps = n_steps
         self.boundaryScheme = boundaryScheme
 
-        if (self.underlying_process == "geometric brownian motion"):
+        if self.underlying_process == "geometric brownian motion":
             #             first_step_prices = np.ones((n_trials,1))*np.log(self.S0)
             log_price_matrix = np.zeros((n_trials, n_steps))
             normal_matrix = np.random.normal(size=(n_trials, n_steps))
-            if (antitheticVariates == True):
+            if antitheticVariates:
                 n_trials *= 2
                 self.n_trials = n_trials
                 normal_matrix = np.concatenate((normal_matrix, -normal_matrix), axis=0)
@@ -54,83 +52,11 @@ class MonteCarlo:
             self.price_matrix = price_matrix
 
         elif (self.underlying_process == "CIR model"):
-            # generate correlated random variables
-            randn_matrix_v = np.random.normal(size=(n_trials, n_steps))
-            if (antitheticVariates == True):
-                n_trials *= 2
-                self.n_trials = n_trials
-                randn_matrix_v = np.concatenate((randn_matrix_v, -randn_matrix_v), axis=0)
-
-            # boundary scheme fuctions
-            if (boundaryScheme == "absorption"):
-                f1 = f2 = f3 = lambda x: np.maximum(x, 0)
-            elif (boundaryScheme == "reflection"):
-                f1 = f2 = f3 = np.absolute
-            elif (boundaryScheme == "Higham and Mao"):
-                f1 = f2 = lambda x: x
-                f3 = np.absolute
-            elif (boundaryScheme == "partial truncation"):
-                f1 = f2 = lambda x: x
-                f3 = lambda x: np.maximum(x, 0)
-            elif (boundaryScheme == "full truncation"):
-                f1 = lambda x: x
-                f2 = f3 = lambda x: np.maximum(x, 0)
-
-            # simulate CIR process
-            V_matrix = np.zeros((n_trials, n_steps + 1))
-            V_matrix[:, 0] = self.S0
-
-            for j in range(self.n_steps):
-                V_matrix[:, j + 1] = f1(V_matrix[:, j]) - self.kappa * dt * (f2(V_matrix[:, j]) - self.theta) + \
-                                     self.xi * np.sqrt(f3(V_matrix[:, j])) * np.sqrt(dt) * randn_matrix_v[:, j]
-                V_matrix[:, j + 1] = f3(V_matrix[:, j + 1])
-
-            price_matrix = V_matrix
-            self.price_matrix = price_matrix
-
-
+            # generate correlated random variables, check Monte Carlo Project
+            pass
         elif (self.underlying_process == "Heston model"):
-            # generate correlated random variables
-            randn_matrix_1 = np.random.normal(size=(n_trials, n_steps))
-            randn_matrix_2 = np.random.normal(size=(n_trials, n_steps))
-            randn_matrix_v = randn_matrix_1
-            randn_matrix_S = self.rho * randn_matrix_1 + np.sqrt(1 - self.rho ** 2) * randn_matrix_2
-            if (antitheticVariates == True):
-                n_trials *= 2
-                self.n_trials = n_trials
-                randn_matrix_v = np.concatenate((randn_matrix_v, +randn_matrix_v), axis=0)
-                randn_matrix_S = np.concatenate((randn_matrix_S, -randn_matrix_S), axis=0)
-
-            # boundary scheme fuctions
-            if (boundaryScheme == "absorption"):
-                f1 = f2 = f3 = lambda x: np.maximum(x, 0)
-            elif (boundaryScheme == "reflection"):
-                f1 = f2 = f3 = np.absolute
-            elif (boundaryScheme == "Higham and Mao"):
-                f1 = f2 = lambda x: x
-                f3 = np.absolute
-            elif (boundaryScheme == "partial truncation"):
-                f1 = f2 = lambda x: x
-                f3 = lambda x: np.maximum(x, 0)
-            elif (boundaryScheme == "full truncation"):
-                f1 = lambda x: x
-                f2 = f3 = lambda x: np.maximum(x, 0)
-
-            # simulate stochastic volatility process
-            V_matrix = np.zeros((n_trials, n_steps + 1))
-            V_matrix[:, 0] = self.V0
-            log_price_matrix = np.zeros((n_trials, n_steps + 1))
-            log_price_matrix[:, 0] = np.log(self.S0)
-            for j in range(self.n_steps):
-                #                 V_matrix[:,j+1] = self.kappa*self.theta*dt + (1-self.kappa*dt)*V_matrix[:,j] +\
-                #                     self.xi*np.sqrt(V_matrix[:,j]*dt)*randn_matrix_v[:,j]
-                V_matrix[:, j + 1] = f1(V_matrix[:, j]) - self.kappa * dt * (f2(V_matrix[:, j]) - self.theta) + \
-                                     self.xi * np.sqrt(f3(V_matrix[:, j])) * np.sqrt(dt) * randn_matrix_v[:, j]
-                V_matrix[:, j + 1] = f3(V_matrix[:, j + 1])
-                log_price_matrix[:, j + 1] = log_price_matrix[:, j] + (mu - V_matrix[:, j] / 2) * dt + \
-                                             np.sqrt(V_matrix[:, j] * dt) * randn_matrix_S[:, j]
-            price_matrix = np.exp(log_price_matrix)
-            self.price_matrix = price_matrix
+            # generate correlated random variables, check monte Carlo project
+            pass
         return price_matrix
 
     def LSM(self, option_type="c", func_list=[lambda x: x ** 0, lambda x: x], onlyITM=False, buy_cost=0.0,
@@ -142,7 +68,7 @@ class MonteCarlo:
 
         dt = self.T / self.n_steps
         df = np.exp(-self.r * dt)
-        df2 = np.exp(-(self.r - self.q) * dt)
+        # df2 = np.exp(-(self.r - self.q) * dt)
         K = self.K
         price_matrix = self.price_matrix
         n_trials = self.n_trials
@@ -208,12 +134,14 @@ class MonteCarlo:
         exercise_matrix[:, -1] = 1
 
         # before maturaty
-        for i in np.arange(n_steps)[:0:-1]:
-            sub_price_matrix = price_matrix[:, i:]
-            sub_exercise_matrix = exercise_matrix[:, i:]
-            american_values_t = _calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df,
-                                                       onlyITM)
-            american_values_matrix[:, i] = american_values_t
+        # FIXME when to use this
+
+        # for i in np.arange(n_steps)[:0:-1]:
+        #     sub_price_matrix = price_matrix[:, i:]
+        #     sub_exercise_matrix = exercise_matrix[:, i:]
+        #     american_values_t = _calc_american_values(payoff_fun, func_list, sub_price_matrix, sub_exercise_matrix, df,
+        #                                               onlyITM)
+        #     american_values_matrix[:, i] = american_values_t
 
         # obtain the optimal policies at the inception
         holding_matrix = np.zeros(exercise_matrix.shape, dtype=bool)
@@ -269,7 +197,7 @@ if __name__ == '__main__':
     volatility = 0.9
     strike = 10
     stock_price = 8
-    V0 = 0.010201
+    # V0 = 0.010201
     # kappa = 6.21
     # theta = 0.019
     # xi = 0.61
@@ -280,7 +208,7 @@ if __name__ == '__main__':
     func_list = [lambda x: x ** 0, lambda x: x]  # basis for OHMC part
     option_type = 'p'
     mc = MonteCarlo(S0=stock_price, K=strike, T=time_to_maturity, r=risk_free_rate, q=dividend, sigma=volatility,
-                    V0=V0, underlying_process="geometric brownian motion")
+                    underlying_process="geometric brownian motion")
     price_matrix = mc.simulate(n_trials=n_trials, n_steps=n_steps, boundaryScheme="Higham and Mao")
     print(price_matrix)
     price_matrix = np.array(price_matrix)
