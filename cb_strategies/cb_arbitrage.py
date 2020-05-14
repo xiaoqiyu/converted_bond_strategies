@@ -11,6 +11,8 @@
 import datetime
 import numpy as np
 import pandas as pd
+import math
+import numpy as np
 import matplotlib.pyplot as plt
 import pprint
 from collections import defaultdict
@@ -21,12 +23,13 @@ from data_processing.fetch_data import get_equ_mkts
 from data_processing.fetch_data import get_acc_dates
 from data_processing.fetch_data import get_trade_cal
 from utils.logger import Logger
+from utils.helper import write_json_file
 
 logger = Logger().get_log()
 
 
-def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='20200403', risk_free_rate=0.1, dividend=0,
-                     topk=10):
+def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_date='20200403', risk_free_rate=0.1,
+                            dividend=0):
     df_trade_cal, call_cnt = get_trade_cal(start_date, end_date)
     logger.info('complete trade cal query with call count:{0}'.format(call_cnt))
     df_trade_cal = df_trade_cal[df_trade_cal.isWeekEnd == 1]
@@ -112,18 +115,18 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
                    sell_cost=0.0)
             option_price = mc.MCPricer(option_type=option_type, isAmerican=True)
             evaluate_price = pure_bond_close + option_price
-            cb_price_evaluates.append(
-                [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
-                 volatility, strike, stock_price, acc_end_date[0]])
+            # cb_price_evaluates.append(
+            #     [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
+            #      volatility, strike, stock_price, acc_end_date[0]])
             all_rows.append(
                 [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
                  volatility, strike, stock_price, acc_end_date[0]])
-        cb_price_evaluates = sorted(cb_price_evaluates, key=lambda x: x[2])
-
-        cb_price_evaluates = cb_price_evaluates[:topk]
-        _mkt_val = np.array([item[1] for item in cb_price_evaluates]).mean()
-        portfolios[d] = cb_price_evaluates[:topk]
-        mkt_values.update({d: _mkt_val})
+        # cb_price_evaluates = sorted(cb_price_evaluates, key=lambda x: x[2])
+        #
+        # cb_price_evaluates = cb_price_evaluates[:topk]
+        # _mkt_val = np.array([item[1] for item in cb_price_evaluates]).mean()
+        # portfolios[d] = cb_price_evaluates[:topk]
+        # mkt_values.update({d: _mkt_val})
     df_all_cb_evaluates = pd.DataFrame(all_rows, columns=['sec_id', 'cb_close', 'evalute_price',
                                                           'prem_ratio', 'trade_date',
                                                           'pure_bond_close', 'option_price', 'duration',
@@ -132,24 +135,56 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
     df_all_cb_evaluates.to_csv("cb_evaluates_results_{0}_{1}.csv".format(start_date, end_date), index=False)
 
 
-def get_mkt_values(start_date='', end_date='', topk=20, init_cash=1000000):
+def get_mkt_values(start_date='', end_date='', topk=20):
     df = pd.read_csv('cb_evaluates_results_{0}_{1}.csv'.format(start_date, end_date))
     all_dates = list(set(df['trade_date']))
-    weekly_values = dict()
+    weekly_values = list()
     weekly_portfolios = list()
     all_dates = sorted(all_dates)
+    metric_dict = dict()
     for d in all_dates:
         _df = df[df.trade_date == d]
         _df.sort_values(by='prem_ratio', ascending=True, inplace=True)
         cb_close_lst = list(_df['cb_close'])[:topk]
         sec_id_lst = list(_df['sec_id'])[:topk]
+        sec_id_lst = sorted(sec_id_lst)
         sec_id_lst.append(d)
-        weekly_values.update({d: sum(cb_close_lst)})
+        weekly_values.append(sum(cb_close_lst))
+        # weekly_values.update({d: sum(cb_close_lst)})
         weekly_portfolios.append(sec_id_lst)
+
     df_portfolios = pd.DataFrame(weekly_portfolios)
-    print(df_portfolios)
-    plt.plot(list(weekly_values.values()))
+    all_returns = weekly_values[-1] / weekly_values[0] - 1
+
+    annual_return = math.pow(all_returns, len(weekly_values) / 52)
+    annual_vol = np.array(weekly_values).std() * math.sqrt(52)
+    max_drawdown = 0.0
+    idx = 0
+    left, right = weekly_values[0], 0
+    while idx < len(weekly_values) - 1:
+        if weekly_values[idx + 1] < weekly_values[idx]:
+            right = weekly_values[idx + 1]
+            if abs(float(right / left) - 1) > max_drawdown:
+                max_drawdown = abs(float(right / left) - 1.0)
+        else:
+            left = weekly_values[idx + 1]
+        idx += 1
+    metric_dict.update({'start_date': start_date, 'end_date': end_date, 'topk': topk, 'total_return': all_returns,
+                        'annual_return': annual_return, 'annual_vol': annual_vol,
+                        'max_drawdown': max_drawdown})
+    write_json_file('bact_testing_metrics.json',metric_dict)
+    df_portfolios.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date))
+
+    net_values = [item / weekly_values[0] for item in weekly_values]
+    # plt.plot(net_values)
+    all_dates_str = [str(item) for item in all_dates]
+    plt.plot(all_dates_str, net_values)
+    plt.gcf().autofmt_xdate()
     plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
+
+
+def back_testing(start_date='', end_date='', *args, **kwargs):
+    topk = kwargs.get('topk') or 20
 
 
 if __name__ == '__main__':
@@ -157,6 +192,6 @@ if __name__ == '__main__':
     e1 = "20200416"
     s2 = '20200103'
     e2 = '20200425'
-    # get_conv_pricing(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0,
-    #                  topk=10)
+    get_conv_bond_evaluates(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0,
+                            topk=10)
     get_mkt_values(start_date=s2, end_date=e2, topk=20)

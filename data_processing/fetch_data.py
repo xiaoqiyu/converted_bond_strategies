@@ -22,11 +22,13 @@ from account_info.get_account_info import get_account_info
 uqer_client = uqer.Client(token=get_account_info().get('uqer_token'))
 logger = Logger().get_log()
 
+
 @func_count
 @timeit
 def get_trade_cal(start_date='20200103', end_date='20200424'):
     return DataAPI.TradeCalGet(exchangeCD=u"XSHG,XSHE", beginDate=start_date, endDate=end_date, isOpen=u"1",
                                field=u"", pandas="1")
+
 
 @func_count
 @timeit
@@ -47,6 +49,7 @@ def get_conv_bond_statics(ticker="", trade_date='20200401', start_date='20200401
     return conv_bond_statics
     # return ['113503.XSHG']
 
+
 @func_count
 @timeit
 def _get_conv_price(sec_id='', trade_date=''):
@@ -56,6 +59,7 @@ def _get_conv_price(sec_id='', trade_date=''):
     df = df[df.convDate <= trade_date]
     df.sort_values(by='convDate', ascending=True, inplace=True)
     return list(df['convPrice'])[-1]
+
 
 @func_count
 @timeit
@@ -70,6 +74,7 @@ def get_conv_bond_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
     # mkt_df['bondPosIndicator'] = ((mkt_df['closePriceBond'] - mkt_df['debtPuredebtRatio']) / mkt_df[
     #     'debtPuredebtRatio']) * 100
     return mkt_df
+
 
 @func_count
 @timeit
@@ -92,6 +97,7 @@ def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
             print("check", ex)
     return ret
 
+
 @func_count
 @timeit
 def get_conv_price(sec_ids=[]):
@@ -100,10 +106,11 @@ def get_conv_price(sec_ids=[]):
         df.append(DataAPI.BondConvPriceChgGet(secID=sec_id, ticker=u"", field=u"", pandas="1"))
     return df
 
+
 @func_count
 @timeit
 def get_acc_dates(sec_ids=[], trade_date='', start_date='', end_date=''):
-    #TODO  start_date use the early one
+    # TODO  start_date use the early one
     acc_infos = DataAPI.BondCfGet(secID=sec_ids, ticker=u"", beginDate='20000401', endDate=end_date, cashTypeCD=u"",
                                   field=u"",
                                   pandas="1")

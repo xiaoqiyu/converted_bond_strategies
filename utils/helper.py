@@ -9,6 +9,7 @@
 '''
 
 import types
+import json
 import time
 from functools import wraps
 
@@ -50,6 +51,20 @@ def add_func(x=1, y=2):
 @timeit
 def test_time():
     time.sleep(2)
+
+
+def write_json_file(file_path='', data=None):
+    if not data:
+        return
+    with open(file_path, 'w') as outfile:
+        j_data = json.dumps(data)
+        outfile.write(j_data)
+
+
+def load_json_file(filepath=''):
+    with open(filepath) as infile:
+        contents = infile.read()
+        return json.loads(contents)
 
 
 if __name__ == "__main__":
