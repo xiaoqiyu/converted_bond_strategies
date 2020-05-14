@@ -16,7 +16,7 @@ from uqer import DataAPI
 from utils.helper import func_count
 from utils.helper import timeit
 from utils.logger import Logger
-from utils.get_account_info import get_account_info
+from account_info.get_account_info import get_account_info
 
 # Add token to fetch the data if retrieve the data online
 uqer_client = uqer.Client(token=get_account_info().get('uqer_token'))
