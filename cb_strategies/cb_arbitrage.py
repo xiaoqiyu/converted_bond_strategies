@@ -11,6 +11,7 @@
 import datetime
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import pprint
 from collections import defaultdict
 from model_processing.monte_carlo import MonteCarlo
@@ -31,6 +32,7 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
     df_trade_cal = df_trade_cal[df_trade_cal.isWeekEnd == 1]
     _dates = list(df_trade_cal['calendarDate'])
     trade_dates = list(set([item.replace('-', '') for item in _dates]))
+    trade_dates = sorted(trade_dates)
     conv_bond_statics, call_cnt = get_conv_bond_statics(start_date=start_date, end_date=end_date)
     logger.info('complte bond statics query, with call count:{0}'.format(call_cnt))
     # sec_ids = ['113503.XSHG']
@@ -48,7 +50,10 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
     mkt_values = dict()
     df_acc_info, call_cnt = get_acc_dates(sec_ids=sec_ids, start_date=start_date, end_date='')
     logger.info('complete acc_info query with call count:{0}'.format(call_cnt))
+
+    all_rows = []
     for d in trade_dates:
+        cb_price_evaluates = []
         logger.info('Processing trade date:{0}'.format(d))
         _format_trade_date = datetime.datetime.strptime(d, '%Y%m%d').strftime('%Y-%m-%d')
         # acc_info_dicts = get_acc_dates(sec_ids=sec_ids, trade_date=d)
@@ -56,7 +61,7 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
         _date_cb_mkt.sort_values(by='puredebtPremRatio', inplace=True)
         n_rows = _date_cb_mkt.shape[0]
         _date_cb_mkt = _date_cb_mkt.head(int(n_rows / 2))
-        cb_price_evaluates = []
+
         _sec_ids = list(set(_date_cb_mkt['secID']))
         # # FIXME change to one query
         # acc_info_dicts = get_acc_dates(sec_ids=_sec_ids, trade_date=d)
@@ -82,7 +87,12 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
             risk_free_rate = risk_free_rate
             dividend = dividend
             time_to_maturity = T
+            vol_lst = list(_equ_mkt['annual_vol'])
+            if not vol_lst:
+                logger.debug("Missing volatility value for sec_id:{0}, trade_date:{1}".format)
+                continue
             volatility = list(_equ_mkt['annual_vol'])[0]
+            volatility = vol_lst[0]
             strike = list(_cb_mkt['convPrice'])[0]
             stock_price = list(_equ_mkt['closePrice'])[0]
 
@@ -105,24 +115,48 @@ def get_conv_pricing(trade_date='20200402', start_date='20200401', end_date='202
             cb_price_evaluates.append(
                 [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
                  volatility, strike, stock_price, acc_end_date[0]])
+            all_rows.append(
+                [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
+                 volatility, strike, stock_price, acc_end_date[0]])
         cb_price_evaluates = sorted(cb_price_evaluates, key=lambda x: x[2])
-        df_cb_evaluates = pd.DataFrame(cb_price_evaluates, columns=['sec_id', 'cb_close', 'evalute_price',
-                                                                    'cb_close/evaluate_price', 'trade_date',
-                                                                    'pure_bond_close', 'option_price', 'duration',
-                                                                    'volatality', 'strike_price', 'stock_price',
-                                                                    'accrual_end_date'])
-        df_cb_evaluates.to_csv("cb_evaluates_results_{0}_{1}.csv".format(start_date, end_date), index=False)
+
         cb_price_evaluates = cb_price_evaluates[:topk]
         _mkt_val = np.array([item[1] for item in cb_price_evaluates]).mean()
         portfolios[d] = cb_price_evaluates[:topk]
         mkt_values.update({d: _mkt_val})
+    df_all_cb_evaluates = pd.DataFrame(all_rows, columns=['sec_id', 'cb_close', 'evalute_price',
+                                                          'prem_ratio', 'trade_date',
+                                                          'pure_bond_close', 'option_price', 'duration',
+                                                          'volatality', 'strike_price', 'stock_price',
+                                                          'accrual_end_date'])
+    df_all_cb_evaluates.to_csv("cb_evaluates_results_{0}_{1}.csv".format(start_date, end_date), index=False)
+
+
+def get_mkt_values(start_date='', end_date='', topk=20, init_cash=1000000):
+    df = pd.read_csv('cb_evaluates_results_{0}_{1}.csv'.format(start_date, end_date))
+    all_dates = list(set(df['trade_date']))
+    weekly_values = dict()
+    weekly_portfolios = list()
+    all_dates = sorted(all_dates)
+    for d in all_dates:
+        _df = df[df.trade_date == d]
+        _df.sort_values(by='prem_ratio', ascending=True, inplace=True)
+        cb_close_lst = list(_df['cb_close'])[:topk]
+        sec_id_lst = list(_df['sec_id'])[:topk]
+        sec_id_lst.append(d)
+        weekly_values.update({d: sum(cb_close_lst)})
+        weekly_portfolios.append(sec_id_lst)
+    df_portfolios = pd.DataFrame(weekly_portfolios)
+    print(df_portfolios)
+    plt.plot(list(weekly_values.values()))
+    plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
 
 
 if __name__ == '__main__':
     s1 = "20200401"
-    e1 = "20200409"
+    e1 = "20200416"
     s2 = '20200103'
     e2 = '20200425'
-    get_conv_pricing(trade_date='20200402', start_date=s1, end_date=e1, risk_free_rate=0.1, dividend=0,
-                     topk=10)
-    # get_conv_pricing()
+    # get_conv_pricing(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0,
+    #                  topk=10)
+    get_mkt_values(start_date=s2, end_date=e2, topk=20)

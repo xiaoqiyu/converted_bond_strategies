@@ -79,6 +79,8 @@ def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
                                 pandas="1", isOpen="1")
     ret = {}
     for sec_id in sec_ids:
+        if sec_id == '300197.XSHE':
+            print('check')
         try:
             _df = equ_df[equ_df.secID == sec_id]
             _df.sort_values(by='tradeDate', ascending=True, inplace=True)
