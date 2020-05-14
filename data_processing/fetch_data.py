@@ -13,11 +13,23 @@ import uqer
 import datetime
 import pandas as pd
 from uqer import DataAPI
+from utils.helper import func_count
+from utils.helper import timeit
+from utils.logger import Logger
+from utils.get_account_info import get_account_info
 
 # Add token to fetch the data if retrieve the data online
-uqer_client = uqer.Client(token="")
+uqer_client = uqer.Client(token=get_account_info().get('uqer_token'))
+logger = Logger().get_log()
 
+@func_count
+@timeit
+def get_trade_cal(start_date='20200103', end_date='20200424'):
+    return DataAPI.TradeCalGet(exchangeCD=u"XSHG,XSHE", beginDate=start_date, endDate=end_date, isOpen=u"1",
+                               field=u"", pandas="1")
 
+@func_count
+@timeit
 def get_conv_bond_statics(ticker="", trade_date='20200401', start_date='20200401', end_date='20200403'):
     # Fetch the conv bond ids
     # df = DataAPI.SecIDGet(partyID=u"", ticker=u"", cnSpell=u"", assetClass=u"B", field=u"", pandas="1",
@@ -35,7 +47,8 @@ def get_conv_bond_statics(ticker="", trade_date='20200401', start_date='20200401
     return conv_bond_statics
     # return ['113503.XSHG']
 
-
+@func_count
+@timeit
 def _get_conv_price(sec_id='', trade_date=''):
     df = DataAPI.BondConvPriceChgGet(secID=sec_id, ticker=u"", field=u"", pandas="1")
     # _dates = [item.replace('-', '') for item in df['convDate']]
@@ -44,20 +57,22 @@ def _get_conv_price(sec_id='', trade_date=''):
     df.sort_values(by='convDate', ascending=True, inplace=True)
     return list(df['convPrice'])[-1]
 
-
+@func_count
+@timeit
 def get_conv_bond_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
     mkt_df = DataAPI.MktConsBondPerfGet(beginDate=start_date, endDate=end_date, secID=sec_ids)
     _vals = mkt_df[['secID', 'tradeDate']].values
-    conv_prices = []
-    for sec_id, trade_date in _vals:
-        conv_prices.append(_get_conv_price(sec_id, trade_date))
-    mkt_df['convPrice'] = conv_prices
-    # 与债底位置的距离指标
-    mkt_df['bondPosIndicator'] = ((mkt_df['closePriceBond'] - mkt_df['debtPuredebtRatio']) / mkt_df[
-        'debtPuredebtRatio']) * 100
+    # conv_prices = []
+    # for sec_id, trade_date in _vals:
+    #     conv_prices.append(_get_conv_price(sec_id, trade_date))
+    # mkt_df['convPrice'] = conv_prices
+    # # 与债底位置的距离指标
+    # mkt_df['bondPosIndicator'] = ((mkt_df['closePriceBond'] - mkt_df['debtPuredebtRatio']) / mkt_df[
+    #     'debtPuredebtRatio']) * 100
     return mkt_df
 
-
+@func_count
+@timeit
 def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
     query_start_date = datetime.datetime.strptime(start_date, '%Y%m%d') + datetime.timedelta(days=-500)
     equ_df = DataAPI.MktEqudGet(secID=sec_ids, beginDate=query_start_date.strftime('%Y%m%d'), endDate=end_date,
@@ -75,21 +90,25 @@ def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
             print("check", ex)
     return ret
 
-
+@func_count
+@timeit
 def get_conv_price(sec_ids=[]):
     df = DataAPI.BondConvPriceChgGet(secID=sec_ids[0], ticker=u"", field=u"", pandas="1")
     for sec_id in sec_ids[1:]:
         df.append(DataAPI.BondConvPriceChgGet(secID=sec_id, ticker=u"", field=u"", pandas="1"))
     return df
 
-
-def get_acc_dates(sec_ids=[], trade_date='', ):
-    acc_infos = DataAPI.BondCfGet(secID=sec_ids, ticker=u"", beginDate=trade_date, endDate=u"", cashTypeCD=u"",
+@func_count
+@timeit
+def get_acc_dates(sec_ids=[], trade_date='', start_date='', end_date=''):
+    #TODO  start_date use the early one
+    acc_infos = DataAPI.BondCfGet(secID=sec_ids, ticker=u"", beginDate='20000401', endDate=end_date, cashTypeCD=u"",
                                   field=u"",
                                   pandas="1")
-    acc_infos.sort_values(by='perAccrEndDate', inplace=True)
-    acc_infos = acc_infos.groupby('secID').agg({'perAccrEndDate': ['first']})
-    return dict(zip(list(acc_infos.index), list(acc_infos.values)))
+    return acc_infos
+    # acc_infos.sort_values(by='perAccrEndDate', inplace=True)
+    # acc_infos = acc_infos.groupby('secID').agg({'perAccrEndDate': ['first']})
+    # return dict(zip(list(acc_infos.index), list(acc_infos.values)))
 
 
 if __name__ == "__main__":

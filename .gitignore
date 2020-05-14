@@ -132,3 +132,4 @@ dmypy.json
 # project 
 databk/
 log.txt
+utils/get_account_info.py
