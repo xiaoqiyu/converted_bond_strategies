@@ -120,6 +120,20 @@ def get_acc_dates(sec_ids=[], trade_date='', start_date='', end_date=''):
     # return dict(zip(list(acc_infos.index), list(acc_infos.values)))
 
 
+@func_count
+@timeit
+def get_bc_mkts(start_date='', end_date='', ticker='000832'):
+    '''
+
+    :param start_date:
+    :param end_date:
+    :param ticker: 000832 中证转债；000905中证500
+    :return:
+    '''
+    return DataAPI.MktIdxdGet(indexID=u"", ticker=ticker, tradeDate=u"", beginDate=start_date, endDate=end_date,
+                              exchangeCD=u"XSHE,XSHG", field=u"", pandas="1")
+
+
 if __name__ == "__main__":
     # df = DataAPI.BondConvPriceChgGet(secID="113503.XSHG", ticker=u"", field=u"", pandas="1")
     # print(df)
