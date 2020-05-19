@@ -11,6 +11,7 @@
 import datetime
 import pandas as pd
 import numpy as np
+import pprint
 import matplotlib.pyplot as plt
 from model_processing.monte_carlo import MonteCarlo
 from data_processing.fetch_data import get_conv_bond_statics
@@ -69,11 +70,8 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
         # acc_info_dicts = get_acc_dates(sec_ids=_sec_ids, trade_date=d)
 
         for sec_id in _sec_ids:
-            # logger.info('Processing sec_id :{0},date:{1}'.format(sec_id, d))
-            # acc_end_date = acc_info_dicts.get(sec_id)
             _df_acc = df_acc_info[df_acc_info.secID == sec_id].sort_values(by='perAccrEndDate', ascending=False,
                                                                            inplace=False)
-            # _dates = _df_acc[['perAccrDate', 'perAccrEndDate']]
             acc_end_date = list(_df_acc['perAccrEndDate'])
             # TODO check the date
             if not acc_end_date:
@@ -114,32 +112,55 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
                    sell_cost=0.0)
             option_price = mc.MCPricer(option_type=option_type, isAmerican=True)
             evaluate_price = pure_bond_close + option_price
-            all_rows.append(
-                [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
-                 volatility, strike, stock_price, acc_end_date[0]])
-    df_all_cb_evaluates = pd.DataFrame(all_rows, columns=['sec_id', 'cb_close', 'evalute_price',
-                                                          'prem_ratio', 'trade_date',
-                                                          'pure_bond_close', 'option_price', 'duration',
-                                                          'volatality', 'strike_price', 'stock_price',
-                                                          'accrual_end_date'])
-    df_all_cb_evaluates.to_csv("cb_evaluates_results_{0}_{1}.csv".format(start_date, end_date), index=False)
+            _curr_row = list(_cb_mkt.values[0])
+            _col_names = list(_cb_mkt.columns)
+            _curr_row.extend(
+                [evaluate_price, cb_close / evaluate_price, option_price, T, volatility, strike, acc_end_date[0]])
+            _col_names.extend(['evaluatePrice', 'premRatio', 'optionPrice', 'duration', 'volatiliry', 'strikePrice',
+                               'accrualEndDate'])
+            all_rows.append(_curr_row)
+            # all_rows.append(
+            #     [sec_id, cb_close, evaluate_price, cb_close / evaluate_price, d, pure_bond_close, option_price, T,
+            #      volatility, strike, stock_price, acc_end_date[0]])
+    # df_all_cb_evaluates = pd.DataFrame(all_rows, columns=['sec_id', 'cb_close', 'evalute_price',
+    #                                                       'prem_ratio', 'trade_date',
+    #                                                       'pure_bond_close', 'option_price', 'duration',
+    #                                                       'volatality', 'strike_price', 'stock_price',
+    #                                                       'accrual_end_date'])
+
+    df_all_cb_evaluates = pd.DataFrame(all_rows, columns=_col_names)
+    _col_names.remove('reviseItem')
+    _col_names.remove('triggerItem')
+    _col_names.remove('triggerCondItem')
+    _col_names.remove('secShortNameBond')
+    _col_names.remove('secShortNameEqu')
+    df_all_cb_evaluates = df_all_cb_evaluates[_col_names]
+    df_all_cb_evaluates.to_csv("conv_bond_evaluates_{0}_{1}.csv".format(start_date, end_date), index=False,
+                               encoding='utf-8')
 
 
-def get_mkt_values(start_date='', end_date='', topk=20):
-    df = pd.read_csv('cb_evaluates_results_{0}_{1}.csv'.format(start_date, end_date))
-    all_dates = list(set(df['trade_date']))
+def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
+    df = pd.read_csv('conv_bond_evaluates_{0}_{1}.csv'.format(start_date, end_date))
+    all_dates = list(set(df['tradeDate']))
     weekly_values = list()
     weekly_portfolios = list()
     all_dates = sorted(all_dates)
-    metric_dict = dict()
+    portfolio_metric_dict = dict()
     for d in all_dates:
-        _df = df[df.trade_date == d]
-        _df.sort_values(by='prem_ratio', ascending=True, inplace=True)
-        cb_close_lst = list(_df['cb_close'])[:topk]
-        sec_id_lst = list(_df['sec_id'])[:topk]
+        _df = df[df.tradeDate == d]
+        _df.sort_values(by='premRatio', ascending=True, inplace=True)
+        cb_close_lst = list(_df['closePriceBond'])[:topk]
+        sec_id_lst = list(_df['secID'])[:topk]
         sec_id_lst = sorted(sec_id_lst)
         sec_id_lst.append(d)
-        weekly_values.append(sum(cb_close_lst))
+        remain_size_lst = list(_df['remainSize'])[:topk]
+        # weighted by size(remain size)
+        weight_lst = [round(item / sum(remain_size_lst), 2) for item in remain_size_lst]
+        # weighted equally
+        # weight_lst = [round(1/len(cb_close_lst))]
+        weight_lst[-1] = 1.0 - sum(weight_lst[:-1])
+        _mkt_values = sum([cb_close_lst[idx] * w for idx, w in enumerate(weight_lst)])
+        weekly_values.append(_mkt_values)
         weekly_portfolios.append(sec_id_lst)
 
     # back testing metrics calcualtion for portfolio
@@ -149,14 +170,13 @@ def get_mkt_values(start_date='', end_date='', topk=20):
     annual_vol = get_annual_vol(weekly_values)
     sharp_ratio = round(annual_return / annual_vol, 4)
     max_drawdown, max_idx, min_idx = get_max_drawdown(weekly_values)
-    metric_dict.update(
+    portfolio_metric_dict.update(
         {'start_date': start_date, 'end_date': end_date, 'topk': topk, 'total_return': total_returns,
          'annual_return': annual_return, 'annual_vol': annual_vol,
          'max_drawdown': max_drawdown, 'sharp_ratio': sharp_ratio})
-    write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date), metric_dict)
-    df_portfolios.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date))
+
     net_values = get_net_values(weekly_values)
-    all_dates_str = [str(item) for item in all_dates]
+    all_dates_str = [str(item).replace('-', '') for item in all_dates]
     n_dates = len(all_dates)
 
     # fetch and calculate zzcb benchmark
@@ -169,6 +189,15 @@ def get_mkt_values(start_date='', end_date='', topk=20):
         _val = close_indexs[bc_trade_dates.index(d)]
         bc_values.append(_val)
     bc_net_values = get_net_values(bc_values)
+    total_returns = get_total_returns(bc_values)
+    annual_return = get_annual_returns(bc_values)
+    annual_vol = get_annual_vol(bc_values)
+    sharp_ratio = round(annual_return / annual_vol, 4)
+    max_drawdown, max_idx, min_idx = get_max_drawdown(bc_values)
+    zzcb_metric_dict = {'total_returns': total_returns, 'annual_return': annual_return, 'annual_vol': annual_vol,
+                        'sharp_ratio': sharp_ratio,
+                        'max_drawdown': max_drawdown, 'max_date': all_dates_str[max_idx],
+                        'min_date': all_dates_str[min_idx]}
 
     # fetch and calculate zz500 benchmark
     df_zz500_mkts, call_cnt = get_bc_mkts(start_date=all_dates_str[0], end_date=all_dates_str[-1], ticker='000905')
@@ -180,12 +209,22 @@ def get_mkt_values(start_date='', end_date='', topk=20):
         _val = close_indexs_zz500[bc_zz500_trade_dates.index(d)]
         bc_zz500_values.append(_val)
     bc_zz500_net_values = get_net_values(bc_zz500_values)
+    total_returns = get_total_returns(bc_zz500_values)
+    annual_return = get_annual_returns(bc_zz500_values)
+    annual_vol = get_annual_vol(bc_zz500_values)
+    sharp_ratio = round(annual_return / annual_vol, 4)
+    max_drawdown, max_idx, min_idx = get_max_drawdown(bc_zz500_values)
+    zz500_metric_dict = {'total_returns': total_returns, 'annual_return': annual_return, 'annual_vol': annual_vol,
+                        'sharp_ratio': sharp_ratio,
+                        'max_drawdown': max_drawdown, 'max_date': all_dates_str[max_idx],
+                        'min_date': all_dates_str[min_idx]}
 
     x_tickers = []
     idx = 0
+    _step = int(n_dates / 16)
     while idx < n_dates:
         x_tickers.append(idx)
-        idx += 4
+        idx += _step
     x_labels = [all_dates[idx] for idx in x_tickers]
     plt.xticks(x_tickers, x_labels)
     plt.annotate("({0},{1})".format(all_dates[max_idx], net_values[max_idx]), xytext=(max_idx, net_values[max_idx]),
@@ -198,14 +237,22 @@ def get_mkt_values(start_date='', end_date='', topk=20):
 
     plt.legend(['portfolio', 'zzconv_bond', 'zz500'])
     plt.gcf().autofmt_xdate()
-    plt.title("total_return:{0}  annual_return:{1}  max_drawdown:{2}%, topk:{3}".format(metric_dict.get('total_return'),
-                                                                                        metric_dict.get(
-                                                                                            'annual_return'),
-                                                                                        metric_dict.get(
-                                                                                            'max_drawdown') * 100,
-                                                                                        metric_dict.get('topk')))
-    # plt.show()
-    plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
+    plt.title("total_return:{0}  annual_return:{1}  max_drawdown:{2}%, topk:{3}".format(
+        portfolio_metric_dict.get('total_return'),
+        portfolio_metric_dict.get(
+            'annual_return'),
+        portfolio_metric_dict.get(
+            'max_drawdown') * 100,
+        portfolio_metric_dict.get('topk')))
+    if save_results:
+        plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
+        write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date), portfolio_metric_dict)
+        df_portfolios.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date))
+    else:
+        pprint.pprint(portfolio_metric_dict)
+        pprint.pprint(zzcb_metric_dict)
+        pprint.pprint(zz500_metric_dict)
+        plt.show()
 
 
 def back_testing(start_date='', end_date='', **kwargs):
@@ -216,10 +263,10 @@ def back_testing(start_date='', end_date='', **kwargs):
 
 
 if __name__ == '__main__':
-    s1 = "20190103"
+    s1 = "20180103"
     e1 = "20200416"
     s2 = '20200103'
     e2 = '20200425'
     # get_conv_bond_evaluates(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0)
-    get_mkt_values(start_date=s1, end_date=e2, topk=20)
-    # back_testing(start_date=s1, end_date=e2 , topk=20)
+    get_mkt_values(start_date=s1, end_date=e2, topk=20, save_results=False)
+    # back_testing(start_date=s1, end_date=e2, topk=20)

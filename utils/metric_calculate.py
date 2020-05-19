@@ -27,14 +27,15 @@ def get_total_returns(vals):
 def get_annual_returns(vals):
     total_returns = get_total_returns(vals)
     if total_returns:
-        return round(math.pow(total_returns, len(vals) / 52),4)
+        return round(total_returns/len(vals)*52, 4)
+        # return round(math.pow(total_returns, len(vals) / 52),4)
 
 
-def get_sharp_ratio(vals):
+def get_sharp_ratio(vals=[], risk_free=0.01):
     annual_ret = get_annual_returns(vals)
     _vol = np.array(vals).std()
     if annual_ret and _vol:
-        return round(annual_ret / _vol, 4)
+        return round((annual_ret - risk_free) / _vol, 4)
 
 
 def get_max_drawdown(vals):
