@@ -12,6 +12,8 @@ import datetime
 import pandas as pd
 import numpy as np
 import pprint
+import copy
+from collections import defaultdict
 import matplotlib.pyplot as plt
 from model_processing.monte_carlo import MonteCarlo
 from data_processing.fetch_data import get_conv_bond_statics
@@ -139,29 +141,91 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
                                encoding='utf-8')
 
 
-def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
+def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_cash=1000000, port_ratio=0.8, bc='',
+                   commission_fee=0.0008):
     df = pd.read_csv('conv_bond_evaluates_{0}_{1}.csv'.format(start_date, end_date))
-    all_dates = list(set(df['tradeDate']))
+    _all_dates = list(set(df['tradeDate']))
     weekly_values = list()
     weekly_portfolios = list()
-    all_dates = sorted(all_dates)
+    portfolio_lst = list()
+    all_dates = sorted(_all_dates)
+    month_end_dates = []
+    n_dates = len(all_dates)
+    for idx in range(n_dates - 1):
+        y1, m1, d1 = all_dates[idx].split('-')
+        y2, m2, d2 = all_dates[idx + 1].split('-')
+        if not (y1 == y2 and m1 == m2):
+            month_end_dates.append(all_dates[idx])
     portfolio_metric_dict = dict()
+    nav_lst = list()
+    remaining_cash = init_cash
+    # {'sec_id':shares}
+    curr_portfolio = dict()
+    transaction_lst = []
+    # TODO for monthly
+    all_dates = month_end_dates
     for d in all_dates:
         _df = df[df.tradeDate == d]
         _df.sort_values(by='premRatio', ascending=True, inplace=True)
         cb_close_lst = list(_df['closePriceBond'])[:topk]
         sec_id_lst = list(_df['secID'])[:topk]
         sec_id_lst = sorted(sec_id_lst)
-        sec_id_lst.append(d)
+        # FIXME figure out why append d
+        # sec_id_lst.append(d)
         remain_size_lst = list(_df['remainSize'])[:topk]
         # weighted by size(remain size)
-        weight_lst = [round(item / sum(remain_size_lst), 2) for item in remain_size_lst]
+        # weight_lst = [round(item / sum(remain_size_lst), 2) for item in remain_size_lst]
         # weighted equally
-        # weight_lst = [round(1/len(cb_close_lst))]
+        weight_lst = [round(1 / len(cb_close_lst))]
         weight_lst[-1] = 1.0 - sum(weight_lst[:-1])
-        _mkt_values = sum([cb_close_lst[idx] * w for idx, w in enumerate(weight_lst)])
+        # _values_per_shares = sum([cb_close_lst[idx] * w for idx, w in enumerate(weight_lst)])
+        shares = int(init_cash * port_ratio / (10 * sum(cb_close_lst)))
+        prev_portfolio = copy.deepcopy(curr_portfolio)
+        # check all sec in the last period
+        for _sec_id, _val in prev_portfolio.items():
+            if _sec_id in sec_id_lst:
+                _idx = sec_id_lst.index(_sec_id)
+                shares2buy = shares - _val
+                if shares2buy != 0:
+                    _cash_transaction = cb_close_lst[_idx] * 10 * shares2buy * (1 + commission_fee)
+                    if shares2buy < 10:
+                        logger.info("ignore the shares less than 10")
+                        continue
+                    if remaining_cash > _cash_transaction:
+                        remaining_cash -= cb_close_lst[_idx] * 10 * shares2buy
+                        transaction_lst.append([d, 0 if shares2buy > 0 else 1, _sec_id, shares2buy, cb_close_lst[_idx],
+                                                shares2buy * cb_close_lst[_idx] * 10, remaining_cash])
+                    else:
+                        logger.warn("there is not enough remaining cash")
+                        continue
+            else:
+                remaining_cash += cb_close_lst[_idx] * 10 * _val * (1 - commission_fee)
+                transaction_lst.append(
+                    [d, 1, _sec_id, _val, cb_close_lst[_idx], _val * cb_close_lst[_idx] * 10, remaining_cash])
+                curr_portfolio.pop(_sec_id)
+        for _sec_id in sec_id_lst:
+            _idx = sec_id_lst.index(_sec_id)
+            curr_portfolio.update({_sec_id: shares})
+            portfolio_lst.append([d, _sec_id, shares, cb_close_lst[_idx], shares * cb_close_lst[_idx] * 10])
+            if _sec_id not in prev_portfolio:
+                _cash_transaction = cb_close_lst[_idx] * shares * 10 * (1 + commission_fee)
+                if remaining_cash > _cash_transaction:
+                    remaining_cash -= cb_close_lst[_idx] * shares * 10
+                    transaction_lst.append(
+                        [d, 0, _sec_id, shares, cb_close_lst[_idx], shares * cb_close_lst[_idx] * 10, remaining_cash])
+                else:
+                    logger.warn("there is not enough remaining cash!")
+                    continue
+        _mkt_values = sum(cb_close_lst) * 10 * shares + remaining_cash
+        print('date:{0}, remaining_cash:{1}, mkt_values:{2}, total:{3}'.format(d, remaining_cash, _mkt_values,
+                                                                               _mkt_values - remaining_cash))
+        nav_lst.append([d, _mkt_values, _mkt_values - remaining_cash, remaining_cash])
         weekly_values.append(_mkt_values)
         weekly_portfolios.append(sec_id_lst)
+    df_transaction = pd.DataFrame(transaction_lst,
+                                  columns=['trade_date', 'buysell', 'sec_id', 'shares', 'price', 'value', 'cash'])
+    df_portfolio = pd.DataFrame(portfolio_lst, columns=['trade_date', 'sec_id', 'shares', 'price', 'value'])
+    df_nav = pd.DataFrame(nav_lst, columns=['trade_date', 'total_value', 'mkt_value', 'cash'])
 
     # back testing metrics calcualtion for portfolio
     df_portfolios = pd.DataFrame(weekly_portfolios)
@@ -200,7 +264,7 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
                         'min_date': all_dates_str[min_idx]}
 
     # fetch and calculate zz500 benchmark
-    df_zz500_mkts, call_cnt = get_bc_mkts(start_date=all_dates_str[0], end_date=all_dates_str[-1], ticker='000905')
+    df_zz500_mkts, call_cnt = get_bc_mkts(start_date=all_dates_str[0], end_date=all_dates_str[-1], ticker=bc)
     logger.info('complte zz500 benchmark mkts query with call count:{0}'.format(call_cnt))
     bc_zz500_trade_dates = [item.replace('-', '') for item in df_bc_mkts['tradeDate']]
     bc_zz500_values = []
@@ -214,10 +278,10 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
     annual_vol = get_annual_vol(bc_zz500_values)
     sharp_ratio = round(annual_return / annual_vol, 4)
     max_drawdown, max_idx, min_idx = get_max_drawdown(bc_zz500_values)
-    zz500_metric_dict = {'total_returns': total_returns, 'annual_return': annual_return, 'annual_vol': annual_vol,
-                        'sharp_ratio': sharp_ratio,
-                        'max_drawdown': max_drawdown, 'max_date': all_dates_str[max_idx],
-                        'min_date': all_dates_str[min_idx]}
+    bc_metric_dict = {'total_returns': total_returns, 'annual_return': annual_return, 'annual_vol': annual_vol,
+                      'sharp_ratio': sharp_ratio,
+                      'max_drawdown': max_drawdown, 'max_date': all_dates_str[max_idx],
+                      'min_date': all_dates_str[min_idx]}
 
     x_tickers = []
     idx = 0
@@ -235,7 +299,8 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
     plt.plot(all_dates_str, bc_net_values)
     plt.plot(all_dates_str, bc_zz500_net_values)
 
-    plt.legend(['portfolio', 'zzconv_bond', 'zz500'])
+    bc_label = {'000905': 'zz500', '000300': 'hs300'}
+    plt.legend(['portfolio', 'zzconv_bond', bc_label.get(bc)])
     plt.gcf().autofmt_xdate()
     plt.title("total_return:{0}  annual_return:{1}  max_drawdown:{2}%, topk:{3}".format(
         portfolio_metric_dict.get('total_return'),
@@ -246,12 +311,15 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True):
         portfolio_metric_dict.get('topk')))
     if save_results:
         plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
-        write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date), portfolio_metric_dict)
-        df_portfolios.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date))
+        write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date),
+                        {'portfolio': portfolio_metric_dict, 'zzcb': zzcb_metric_dict, 'bc': bc_metric_dict})
+        df_portfolio.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date), index=False)
+        df_transaction.to_csv('transaction_{0}_{1}.csv'.format(start_date, end_date), index=False)
+        df_nav.to_csv('nav_{0}_{1}.csv'.format(start_date, end_date), index=False)
     else:
         pprint.pprint(portfolio_metric_dict)
         pprint.pprint(zzcb_metric_dict)
-        pprint.pprint(zz500_metric_dict)
+        pprint.pprint(bc_metric_dict)
         plt.show()
 
 
@@ -268,5 +336,6 @@ if __name__ == '__main__':
     s2 = '20200103'
     e2 = '20200425'
     # get_conv_bond_evaluates(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0)
-    get_mkt_values(start_date=s1, end_date=e2, topk=20, save_results=False)
+    get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=True, init_cash=1000000, port_ratio=0.8,
+                   bc='000300', commission_fee=0.0008)
     # back_testing(start_date=s1, end_date=e2, topk=20)

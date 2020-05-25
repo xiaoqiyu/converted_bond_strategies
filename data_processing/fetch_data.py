@@ -127,7 +127,7 @@ def get_bc_mkts(start_date='', end_date='', ticker='000832'):
 
     :param start_date:
     :param end_date:
-    :param ticker: 000832 中证转债；000905中证500
+    :param ticker: 000832 中证转债；000905中证500;000300沪深300
     :return:
     '''
     return DataAPI.MktIdxdGet(indexID=u"", ticker=ticker, tradeDate=u"", beginDate=start_date, endDate=end_date,
