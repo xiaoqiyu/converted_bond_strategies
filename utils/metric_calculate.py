@@ -10,6 +10,7 @@
 
 import math
 import numpy as np
+from sklearn.linear_model import LinearRegression
 
 
 def get_net_values(vals):
@@ -27,7 +28,7 @@ def get_total_returns(vals):
 def get_annual_returns(vals):
     total_returns = get_total_returns(vals)
     if total_returns:
-        return round(total_returns/len(vals)*52, 4)
+        return round(total_returns / len(vals) * 52, 4)
         # return round(math.pow(total_returns, len(vals) / 52),4)
 
 
@@ -66,5 +67,27 @@ def get_annual_vol(vals):
     n_len = len(vals)
     arr = []
     for i in range(1, n_len):
-        arr.append(vals[i]/vals[i-1]-1)
+        arr.append(vals[i] / vals[i - 1] - 1)
     return round(np.array(arr).std() * math.sqrt(52), 4)
+
+
+def get_alpha_beta(vals, bc_vals):
+    lr = LinearRegression(fit_intercept=True)
+    X = np.array(bc_vals).reshape((-1, 1))
+    y = np.array(vals).reshape((-1, 1))
+    lr.fit(X, y)
+    return lr.coef_[0][0], lr.intercept_[0]
+
+
+if __name__ == '__main__':
+    import numpy as np
+    from sklearn.linear_model import LinearRegression
+
+    X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
+    # y = 1 * x_0 + 2 * x_1 + 3
+    y = np.dot(X, np.array([1, 2])) + 3
+    X = np.array(range(10)).reshape((-1, 1))
+    y = X * 2.0 + 3
+    beta, alpha = get_alpha_beta(y, X)
+    print(beta)
+    print(alpha)

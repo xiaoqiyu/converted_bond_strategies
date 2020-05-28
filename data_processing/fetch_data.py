@@ -34,18 +34,24 @@ def get_trade_cal(start_date='20200103', end_date='20200424'):
 @timeit
 def get_conv_bond_statics(ticker="", trade_date='20200401', start_date='20200401', end_date='20200403'):
     # Fetch the conv bond ids
-    # df = DataAPI.SecIDGet(partyID=u"", ticker=u"", cnSpell=u"", assetClass=u"B", field=u"", pandas="1",
-    #                       listStatusCD=u"L")
-    # df = df[df['secShortName'].str.contains("转债")].sort_values(by='listDate')
-    df = pd.read_csv('conv_bond_codes.csv')
+    df = DataAPI.SecIDGet(partyID=u"", ticker=u"", cnSpell=u"", assetClass=u"B", exchangeCD=["XSHE", "XSHG"],
+                          listStatusCD="", field=["secID", 'secShortName', 'listDate', 'listStatusCD'], pandas="1")
+    df = df[df['secShortName'].str.contains("转债")].sort_values(by='listDate')
+    # get all codes
+    df = df.drop('secShortName', axis=1)
+    # df = pd.read_csv('conv_bond_codes.csv')
     sec_ids = list(set(df['secID'].values))
     fields = ['secID', 'totalSize', 'remainSize', 'firstAccrDate', 'maturityDate', 'firstRedempDate', 'publishDate',
               'listDate', 'delistDate']
     conv_bond_statics = DataAPI.BondGet(secID=sec_ids, ticker=u"", typeID=u"02020113", exchangeCD=u"", partyID=u"",
                                         listStatusCD=u"", delistDate="", field=fields, pandas="1")
-    conv_bond_statics = conv_bond_statics[conv_bond_statics.listDate <= start_date]
-    conv_bond_statics = conv_bond_statics[conv_bond_statics.maturityDate > end_date]
-    conv_bond_statics = conv_bond_statics[conv_bond_statics.delistDate > end_date]
+    if '-' not in start_date:
+        _start_date = '{0}-{1}-{2}'.format(start_date[0:4], start_date[4:6], start_date[6:])
+    if '-' not in end_date:
+        _end_date = '{0}-{1}-{2}'.format(end_date[0:4], end_date[4:6], end_date[6:])
+    conv_bond_statics = conv_bond_statics[conv_bond_statics.listDate <= _end_date]
+    conv_bond_statics = conv_bond_statics[conv_bond_statics.maturityDate > _start_date]
+    conv_bond_statics = conv_bond_statics[conv_bond_statics.delistDate > _start_date]
     return conv_bond_statics
     # return ['113503.XSHG']
 
@@ -140,8 +146,8 @@ if __name__ == "__main__":
     start_date = '20200401'
     end_date = '20200403'
     # 113503
-    conv_bond_statics = get_conv_bond_statics(start_date=start_date, end_date=end_date)
-
+    conv_bond_statics, cnt = get_conv_bond_statics(start_date=start_date, end_date=end_date)
+    print(cnt)
     # sec_ids = ['113503.XSHG']
     sec_ids = list(set(conv_bond_statics['secID']))
     sec_ids = sorted(sec_ids)[:2]

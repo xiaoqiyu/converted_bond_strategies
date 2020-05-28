@@ -30,6 +30,7 @@ from utils.metric_calculate import get_max_drawdown
 from utils.metric_calculate import get_net_values
 from utils.metric_calculate import get_sharp_ratio
 from utils.metric_calculate import get_annual_vol
+from utils.metric_calculate import get_alpha_beta
 
 logger = Logger().get_log()
 
@@ -38,7 +39,9 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
                             dividend=0):
     df_trade_cal, call_cnt = get_trade_cal(start_date, end_date)
     logger.info('complete trade cal query with call count:{0}'.format(call_cnt))
-    df_trade_cal = df_trade_cal[df_trade_cal.isWeekEnd == 1]
+    # long period, mainly for backtesting mode; if start_date == end_date, real trade mode
+    if not start_date == end_date:
+        df_trade_cal = df_trade_cal[df_trade_cal.isWeekEnd == 1]
     _dates = list(df_trade_cal['calendarDate'])
     trade_dates = list(set([item.replace('-', '') for item in _dates]))
     trade_dates = sorted(trade_dates)
@@ -142,8 +145,23 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
 
 
 def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_cash=1000000, port_ratio=0.8, bc='',
-                   commission_fee=0.0008):
+                   commission_fee=0.0008, mode=0, freq='m'):
+    '''
+
+    :param start_date:str,'yyyymmdd'
+    :param end_date: str, 'yyyymmdd'
+    :param topk: in each period, select topk conv_bonds that have the highest scores to buy in
+    :param save_results: for backtesting mode: True: overwrite and save the testing results, False: not Save
+    :param init_cash: init cash for trade
+    :param port_ratio: ratio to buy in the portfolio; cash ratio is 1-port_ratio
+    :param bc: benchmark except zz_conv_bond; 000300 for hs300, 000905 for zz500
+    :param commission_fee: commission fee ratio for trade(buy and sell) conv bond
+    :param mode: 0 for backtesting; 1 for real trade
+    :param freq: 'm' for monthly backtesting, 'w' for weekly backtesting
+    :return:
+    '''
     df = pd.read_csv('conv_bond_evaluates_{0}_{1}.csv'.format(start_date, end_date))
+    df['priceRatio'] = df['closePriceEqu'] / df['convPrice']
     _all_dates = list(set(df['tradeDate']))
     weekly_values = list()
     weekly_portfolios = list()
@@ -151,21 +169,29 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
     all_dates = sorted(_all_dates)
     month_end_dates = []
     n_dates = len(all_dates)
-    for idx in range(n_dates - 1):
-        y1, m1, d1 = all_dates[idx].split('-')
-        y2, m2, d2 = all_dates[idx + 1].split('-')
-        if not (y1 == y2 and m1 == m2):
-            month_end_dates.append(all_dates[idx])
+    if n_dates == 1:
+        month_end_dates = [all_dates[0]]
+    else:
+        for idx in range(n_dates - 1):
+            y1, m1, d1 = all_dates[idx].split('-')
+            y2, m2, d2 = all_dates[idx + 1].split('-')
+            if not (y1 == y2 and m1 == m2):
+                month_end_dates.append(all_dates[idx])
     portfolio_metric_dict = dict()
     nav_lst = list()
     remaining_cash = init_cash
     # {'sec_id':shares}
     curr_portfolio = dict()
     transaction_lst = []
-    # TODO for monthly
-    all_dates = month_end_dates
+    if freq == 'm':
+        all_dates = month_end_dates
     for d in all_dates:
         _df = df[df.tradeDate == d]
+        # TODO filter by bondPremRatio or priceRatio??
+        # n_row, n_col = _df.shape
+        # print(n_row, n_col)
+        # _df.sort_values(by='priceRatio', ascending=True, inplace=True)
+        # _df = _df.head(int(n_row / 2))
         _df.sort_values(by='premRatio', ascending=True, inplace=True)
         cb_close_lst = list(_df['closePriceBond'])[:topk]
         sec_id_lst = list(_df['secID'])[:topk]
@@ -181,6 +207,9 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
         # _values_per_shares = sum([cb_close_lst[idx] * w for idx, w in enumerate(weight_lst)])
         shares = int(init_cash * port_ratio / (10 * sum(cb_close_lst)))
         prev_portfolio = copy.deepcopy(curr_portfolio)
+        if mode == 1:
+            mkt_values = [item * shares for item in cb_close_lst]
+            return sec_id_lst, shares, cb_close_lst, sum(mkt_values), remaining_cash, init_cash
         # check all sec in the last period
         for _sec_id, _val in prev_portfolio.items():
             if _sec_id in sec_id_lst:
@@ -264,24 +293,26 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
                         'min_date': all_dates_str[min_idx]}
 
     # fetch and calculate zz500 benchmark
-    df_zz500_mkts, call_cnt = get_bc_mkts(start_date=all_dates_str[0], end_date=all_dates_str[-1], ticker=bc)
+    df_bc_mkts, call_cnt = get_bc_mkts(start_date=all_dates_str[0], end_date=all_dates_str[-1], ticker=bc)
     logger.info('complte zz500 benchmark mkts query with call count:{0}'.format(call_cnt))
-    bc_zz500_trade_dates = [item.replace('-', '') for item in df_bc_mkts['tradeDate']]
-    bc_zz500_values = []
-    close_indexs_zz500 = list(df_zz500_mkts['closeIndex'])
+    bc_trade_dates = [item.replace('-', '') for item in df_bc_mkts['tradeDate']]
+    bc_bc_values = []
+    close_indexs_zz500 = list(df_bc_mkts['closeIndex'])
     for d in all_dates_str:
-        _val = close_indexs_zz500[bc_zz500_trade_dates.index(d)]
-        bc_zz500_values.append(_val)
-    bc_zz500_net_values = get_net_values(bc_zz500_values)
-    total_returns = get_total_returns(bc_zz500_values)
-    annual_return = get_annual_returns(bc_zz500_values)
-    annual_vol = get_annual_vol(bc_zz500_values)
+        _val = close_indexs_zz500[bc_trade_dates.index(d)]
+        bc_bc_values.append(_val)
+    bc_zz500_net_values = get_net_values(bc_bc_values)
+    total_returns = get_total_returns(bc_bc_values)
+    annual_return = get_annual_returns(bc_bc_values)
+    annual_vol = get_annual_vol(bc_bc_values)
     sharp_ratio = round(annual_return / annual_vol, 4)
-    max_drawdown, max_idx, min_idx = get_max_drawdown(bc_zz500_values)
+    max_drawdown, max_idx, min_idx = get_max_drawdown(bc_bc_values)
+    _beta, _alpha = get_alpha_beta(net_values, bc_net_values)
     bc_metric_dict = {'total_returns': total_returns, 'annual_return': annual_return, 'annual_vol': annual_vol,
                       'sharp_ratio': sharp_ratio,
                       'max_drawdown': max_drawdown, 'max_date': all_dates_str[max_idx],
                       'min_date': all_dates_str[min_idx]}
+    portfolio_metric_dict.update({'alpha': _alpha, 'beta': _beta})
 
     x_tickers = []
     idx = 0
@@ -302,13 +333,13 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
     bc_label = {'000905': 'zz500', '000300': 'hs300'}
     plt.legend(['portfolio', 'zzconv_bond', bc_label.get(bc)])
     plt.gcf().autofmt_xdate()
-    plt.title("total_return:{0}  annual_return:{1}  max_drawdown:{2}%, topk:{3}".format(
+    plt.title("total_return:{0}  annual_return:{1}  max_drawdown:{2}%, alpha:{3}".format(
         portfolio_metric_dict.get('total_return'),
         portfolio_metric_dict.get(
             'annual_return'),
-        portfolio_metric_dict.get(
-            'max_drawdown') * 100,
-        portfolio_metric_dict.get('topk')))
+        round(portfolio_metric_dict.get(
+            'max_drawdown') * 100,4),
+        portfolio_metric_dict.get('alpha')))
     if save_results:
         plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
         write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date),
@@ -317,17 +348,27 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
         df_transaction.to_csv('transaction_{0}_{1}.csv'.format(start_date, end_date), index=False)
         df_nav.to_csv('nav_{0}_{1}.csv'.format(start_date, end_date), index=False)
     else:
-        pprint.pprint(portfolio_metric_dict)
-        pprint.pprint(zzcb_metric_dict)
-        pprint.pprint(bc_metric_dict)
+        pprint.pprint({'portfolio': portfolio_metric_dict, 'zzcb': zzcb_metric_dict, 'bc': bc_metric_dict})
         plt.show()
 
 
 def back_testing(start_date='', end_date='', **kwargs):
+    topk = kwargs.get('topk') or 10
+    bc = kwargs.get('bc') or '000300'
+    # get_conv_bond_evaluates(trade_date='20200402', start_date=start_date, end_date=end_date, risk_free_rate=0.1,
+    #                         dividend=0)
+    get_mkt_values(start_date=start_date, end_date=end_date, topk=topk, save_results=True, init_cash=1000000,
+                   port_ratio=0.8, bc=bc, commission_fee=0.0008, mode=0, freq='m')
+
+
+def real_trade(trade_date='', **kwargs):
     topk = kwargs.get('topk') or 20
-    get_conv_bond_evaluates(trade_date='20200402', start_date=start_date, end_date=end_date, risk_free_rate=0.1,
+    bc = kwargs.get('bc') or '000300'
+    get_conv_bond_evaluates(trade_date='', start_date=trade_date, end_date=trade_date, risk_free_rate=0.1,
                             dividend=0)
-    get_mkt_values(start_date=start_date, end_date=end_date, topk=topk)
+    ret = get_mkt_values(start_date=trade_date, end_date=trade_date, topk=topk, save_results=True, init_cash=1000000,
+                         port_ratio=0.8, bc=bc, commission_fee=0.0008, mode=1)
+    pprint.pprint(ret)
 
 
 if __name__ == '__main__':
@@ -335,7 +376,9 @@ if __name__ == '__main__':
     e1 = "20200416"
     s2 = '20200103'
     e2 = '20200425'
-    # get_conv_bond_evaluates(trade_date='20200402', start_date=s2, end_date=e2, risk_free_rate=0.1, dividend=0)
-    get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=True, init_cash=1000000, port_ratio=0.8,
-                   bc='000300', commission_fee=0.0008)
-    # back_testing(start_date=s1, end_date=e2, topk=20)
+    td = '20200527'
+    # get_conv_bond_evaluates(trade_date='20200402', start_date=td, end_date=td, risk_free_rate=0.1, dividend=0)
+    # get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=False, init_cash=1000000, port_ratio=0.8,
+    #                bc='000300', commission_fee=0.0008, mode=0, freq='m')
+    back_testing(start_date=s1, end_date=e2, topk=10)
+    # real_trade(trade_date=td, topk=10)
