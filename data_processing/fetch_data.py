@@ -95,7 +95,7 @@ def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
         try:
             _df = equ_df[equ_df.secID == sec_id]
             _df.sort_values(by='tradeDate', ascending=True, inplace=True)
-            _df['annual_vol'] = _df[['chgPct']].rolling(250).apply(lambda x: x.std() * math.sqrt(250))
+            _df['annual_vol'] = _df[['chgPct']].rolling(20).apply(lambda x: x.std() * math.sqrt(250))
             _format_start_date = datetime.datetime.strptime(start_date, '%Y%m%d').strftime('%Y-%m-%d')
             _df = _df[_df.tradeDate >= _format_start_date]
             ret.update({sec_id: _df})
@@ -143,8 +143,13 @@ def get_bc_mkts(start_date='', end_date='', ticker='000832'):
 if __name__ == "__main__":
     # df = DataAPI.BondConvPriceChgGet(secID="113503.XSHG", ticker=u"", field=u"", pandas="1")
     # print(df)
-    start_date = '20200401'
-    end_date = '20200403'
+    df, cnt = get_conv_bond_mkts(sec_ids=['110044.XSHG'], start_date='20190103', end_date='20210618')
+    print(df['tradeDate'])
+
+
+
+    start_date = '20210615'
+    end_date = '20210618'
     # 113503
     conv_bond_statics, cnt = get_conv_bond_statics(start_date=start_date, end_date=end_date)
     print(cnt)
@@ -159,7 +164,7 @@ if __name__ == "__main__":
     # acc_infos = acc_infos.groupby('secID').agg({'perAccrEndDate': ['first']})
     # acc_info_dicts = dict(zip(list(acc_infos.index), list(acc_infos.values)))
     acc_info_dicts = get_acc_dates(sec_ids=sec_ids, trade_date=start_date)
-    df = get_conv_bond_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
+    df, cnt = get_conv_bond_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
     # print(df.head())
     exchange_cds = [item.split('.')[1] for item in df['secID']]
     equ_sec_ids = list(set(['{0}.{1}'.format(df['tickerEqu'][idx], item) for idx, item in enumerate(exchange_cds)]))

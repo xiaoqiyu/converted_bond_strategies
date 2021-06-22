@@ -49,12 +49,16 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
     logger.info('complte bond statics query, with call count:{0}'.format(call_cnt))
     # sec_ids = ['113503.XSHG']
     sec_ids = list(set(conv_bond_statics['secID']))
+
     conv_bond_mkts, call_cnt = get_conv_bond_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
+
     logger.info('complte conv bond mkt query with call count:{0}'.format(call_cnt))
     exchange_cds = [item.split('.')[1] for item in conv_bond_mkts['secID']]
     equ_sec_ids = ['{0}.{1}'.format(conv_bond_mkts['tickerEqu'][idx], item) for idx, item in enumerate(exchange_cds)]
     conv_id2equ_id = dict(zip(conv_bond_mkts['secID'], equ_sec_ids))
+
     equ_mkts, call_cnt = get_equ_mkts(list(set(equ_sec_ids)), start_date, end_date)
+
     logger.info('complete equ mkt query with call count:{0}'.format(call_cnt))
     df_acc_info, call_cnt = get_acc_dates(sec_ids=sec_ids, start_date=start_date, end_date='')
     logger.info('complete acc_info query with call count:{0}'.format(call_cnt))
@@ -66,6 +70,7 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
         _format_trade_date = datetime.datetime.strptime(d, '%Y%m%d').strftime('%Y-%m-%d')
         # acc_info_dicts = get_acc_dates(sec_ids=sec_ids, trade_date=d)
         _date_cb_mkt = conv_bond_mkts[conv_bond_mkts.tradeDate == _format_trade_date]
+        #按照债低选取一半
         _date_cb_mkt.sort_values(by='puredebtPremRatio', inplace=True)
         n_rows = _date_cb_mkt.shape[0]
         _date_cb_mkt = _date_cb_mkt.head(int(n_rows / 2))
@@ -140,7 +145,7 @@ def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_da
     _col_names.remove('secShortNameBond')
     _col_names.remove('secShortNameEqu')
     df_all_cb_evaluates = df_all_cb_evaluates[_col_names]
-    df_all_cb_evaluates.to_csv("conv_bond_evaluates_{0}_{1}.csv".format(start_date, end_date), index=False,
+    df_all_cb_evaluates.to_csv("cache/conv_bond_evaluates_{0}_{1}.csv".format(start_date, end_date), index=False,
                                encoding='utf-8')
 
 
@@ -160,7 +165,7 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
     :param freq: 'm' for monthly backtesting, 'w' for weekly backtesting
     :return:
     '''
-    df = pd.read_csv('conv_bond_evaluates_{0}_{1}.csv'.format(start_date, end_date))
+    df = pd.read_csv('cache/conv_bond_evaluates_{0}_{1}.csv'.format(start_date, end_date))
     df['priceRatio'] = df['closePriceEqu'] / df['convPrice']
     _all_dates = list(set(df['tradeDate']))
     weekly_values = list()
@@ -183,16 +188,18 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
     # {'sec_id':shares}
     curr_portfolio = dict()
     transaction_lst = []
+    #if monthly strategy, handle with all month end dates, by defualt, it is weekly
     if freq == 'm':
         all_dates = month_end_dates
     for d in all_dates:
         _df = df[df.tradeDate == d]
-        # TODO filter by bondPremRatio or priceRatio??
+        # TODO filter by bondPremRatio(转股溢价率） or priceRatio?? 已经对纯债溢价率做过一半的筛选了，改一下做个rank
         # n_row, n_col = _df.shape
         # print(n_row, n_col)
         # _df.sort_values(by='priceRatio', ascending=True, inplace=True)
         # _df = _df.head(int(n_row / 2))
-        _df.sort_values(by='premRatio', ascending=True, inplace=True)
+        _df['score'] = _df['bondPremRatio'].rank() + _df['puredebtPremRatio'].rank()
+        _df.sort_values(by='score', ascending=True, inplace=True)
         cb_close_lst = list(_df['closePriceBond'])[:topk]
         sec_id_lst = list(_df['secID'])[:topk]
         sec_id_lst = sorted(sec_id_lst)
@@ -316,7 +323,8 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
 
     x_tickers = []
     idx = 0
-    _step = int(n_dates / 16)
+    _tmp_step = min(16, n_dates)
+    _step = int(n_dates / _tmp_step)
     while idx < n_dates:
         x_tickers.append(idx)
         idx += _step
@@ -341,12 +349,12 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
             'max_drawdown') * 100,4),
         portfolio_metric_dict.get('alpha')))
     if save_results:
-        plt.savefig('weekly_values_{0}_{1}.jpg'.format(start_date, end_date))
-        write_json_file('back_testing_metrics_{0}_{1}.json'.format(start_date, end_date),
+        plt.savefig('results/back_testing_{0}_{1}.jpg'.format(start_date, end_date))
+        write_json_file('results/back_testing_metrics_{0}_{1}.json'.format(start_date, end_date),
                         {'portfolio': portfolio_metric_dict, 'zzcb': zzcb_metric_dict, 'bc': bc_metric_dict})
-        df_portfolio.to_csv('portfolio_{0}_{1}.csv'.format(start_date, end_date), index=False)
-        df_transaction.to_csv('transaction_{0}_{1}.csv'.format(start_date, end_date), index=False)
-        df_nav.to_csv('nav_{0}_{1}.csv'.format(start_date, end_date), index=False)
+        df_portfolio.to_csv('results/portfolio_{0}_{1}.csv'.format(start_date, end_date), index=False)
+        df_transaction.to_csv('results/transaction_{0}_{1}.csv'.format(start_date, end_date), index=False)
+        df_nav.to_csv('results/nav_{0}_{1}.csv'.format(start_date, end_date), index=False)
     else:
         pprint.pprint({'portfolio': portfolio_metric_dict, 'zzcb': zzcb_metric_dict, 'bc': bc_metric_dict})
         plt.show()
@@ -358,7 +366,7 @@ def back_testing(start_date='', end_date='', **kwargs):
     # get_conv_bond_evaluates(trade_date='20200402', start_date=start_date, end_date=end_date, risk_free_rate=0.1,
     #                         dividend=0)
     get_mkt_values(start_date=start_date, end_date=end_date, topk=topk, save_results=True, init_cash=1000000,
-                   port_ratio=0.8, bc=bc, commission_fee=0.0008, mode=0, freq='m')
+                   port_ratio=0.8, bc=bc, commission_fee=0.0005, mode=0, freq='w')
 
 
 def real_trade(trade_date='', **kwargs):
@@ -372,13 +380,13 @@ def real_trade(trade_date='', **kwargs):
 
 
 if __name__ == '__main__':
-    s1 = "20180103"
-    e1 = "20200416"
+    s1 = "20210103"
+    e1 = "20210621"
     s2 = '20200103'
     e2 = '20200425'
-    td = '20200527'
+    td = '20210622'
     # get_conv_bond_evaluates(trade_date='20200402', start_date=td, end_date=td, risk_free_rate=0.1, dividend=0)
     # get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=False, init_cash=1000000, port_ratio=0.8,
     #                bc='000300', commission_fee=0.0008, mode=0, freq='m')
-    back_testing(start_date=s1, end_date=e2, topk=10)
+    back_testing(start_date=s1, end_date=e1, topk=20)
     # real_trade(trade_date=td, topk=10)
