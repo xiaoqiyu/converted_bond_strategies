@@ -384,9 +384,9 @@ if __name__ == '__main__':
     e1 = "20210621"
     s2 = '20200103'
     e2 = '20200425'
-    td = '20210622'
+    td = '20210625'
     # get_conv_bond_evaluates(trade_date='20200402', start_date=td, end_date=td, risk_free_rate=0.1, dividend=0)
     # get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=False, init_cash=1000000, port_ratio=0.8,
     #                bc='000300', commission_fee=0.0008, mode=0, freq='m')
-    back_testing(start_date=s1, end_date=e1, topk=20)
-    # real_trade(trade_date=td, topk=10)
+    # back_testing(start_date=s1, end_date=e1, topk=20)
+    real_trade(trade_date=td, topk=30)
