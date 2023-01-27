@@ -134,3 +134,5 @@ databk/
 log.txt
 account_info/
 cb_strategies/log.txt
+cb_strategies/cache
+cb_strategies/results

@@ -194,8 +194,8 @@ def get_mkt_values(start_date='', end_date='', topk=20, save_results=True, init_
     for d in all_dates:
         _df = df[df.tradeDate == d]
         # TODO filter by bondPremRatio(转股溢价率） or priceRatio?? 已经对纯债溢价率做过一半的筛选了，改一下做个rank
-        # n_row, n_col = _df.shape
-        # print(n_row, n_col)
+        n_row, n_col = _df.shape
+        print(n_row, n_col)
         # _df.sort_values(by='priceRatio', ascending=True, inplace=True)
         # _df = _df.head(int(n_row / 2))
         _df['score'] = _df['bondPremRatio'].rank() + _df['puredebtPremRatio'].rank()
@@ -381,12 +381,12 @@ def real_trade(trade_date='', **kwargs):
 
 if __name__ == '__main__':
     s1 = "20210103"
-    e1 = "20210621"
+    e1 = "20211231"
     s2 = '20200103'
     e2 = '20200425'
-    td = '20210625'
+    td = '20210930'
     # get_conv_bond_evaluates(trade_date='20200402', start_date=td, end_date=td, risk_free_rate=0.1, dividend=0)
     # get_mkt_values(start_date=s1, end_date=e2, topk=10, save_results=False, init_cash=1000000, port_ratio=0.8,
     #                bc='000300', commission_fee=0.0008, mode=0, freq='m')
-    # back_testing(start_date=s1, end_date=e1, topk=20)
-    real_trade(trade_date=td, topk=30)
+    back_testing(start_date=s1, end_date=e1, topk=10)
+    # real_trade(trade_date=td, topk=20)
