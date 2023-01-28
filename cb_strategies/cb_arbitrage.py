@@ -20,7 +20,7 @@ from data_processing.fetch_data import get_conv_bond_statics
 from data_processing.fetch_data import get_conv_bond_mkts
 from data_processing.fetch_data import get_equ_mkts
 from data_processing.fetch_data import get_acc_dates
-from data_processing.fetch_data import get_trade_cal
+from data_processing.fetch_data import get_trade_calendar
 from data_processing.fetch_data import get_bc_mkts
 from utils.logger import Logger
 from utils.helper import write_json_file
@@ -37,7 +37,7 @@ logger = Logger().get_log()
 
 def get_conv_bond_evaluates(trade_date='20200402', start_date='20200401', end_date='20200403', risk_free_rate=0.1,
                             dividend=0):
-    df_trade_cal, call_cnt = get_trade_cal(start_date, end_date)
+    df_trade_cal, call_cnt = get_trade_calendar(start_date, end_date)
     logger.info('complete trade cal query with call count:{0}'.format(call_cnt))
     # long period, mainly for backtesting mode; if start_date == end_date, real trade mode
     if not start_date == end_date:
