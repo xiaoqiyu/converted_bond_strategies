@@ -132,7 +132,7 @@ dmypy.json
 # project 
 databk/
 log.txt
-account_info/
+#account_info/get_account_info.py
 cb_strategies/log.txt
 
 cb_strategies/results
