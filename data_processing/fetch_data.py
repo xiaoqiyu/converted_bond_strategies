@@ -25,7 +25,7 @@ logger = Logger().get_log()
 
 @func_count
 @timeit
-def get_trade_cal(start_date='20200103', end_date='20200424'):
+def get_trade_calendar(start_date='20200103', end_date='20200424'):
     return DataAPI.TradeCalGet(exchangeCD=u"XSHG,XSHE", beginDate=start_date, endDate=end_date, isOpen=u"1",
                                field=u"", pandas="1")
 
@@ -84,6 +84,24 @@ def get_conv_bond_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
 
 @func_count
 @timeit
+def get_cb_der_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
+    tickers = [item.split('.')[0] for item in sec_ids]
+    exchange_cds = [item.split('.')[1] for item in sec_ids]
+    mkt_df = DataAPI.BondConvDerGet(ticker=tickers, exchangeCD=exchange_cds, beginDate=start_date, endDate=end_date)
+    # mkt_df = DataAPI.MktConsBondPerfGet(beginDate=start_date, endDate=end_date, secID=sec_ids)
+    # _vals = mkt_df[['secID', 'tradeDate']].values
+    # conv_prices = []
+    # for sec_id, trade_date in _vals:
+    #     conv_prices.append(_get_conv_price(sec_id, trade_date))
+    # mkt_df['convPrice'] = conv_prices
+    # # 与债底位置的距离指标
+    # mkt_df['bondPosIndicator'] = ((mkt_df['closePriceBond'] - mkt_df['debtPuredebtRatio']) / mkt_df[
+    #     'debtPuredebtRatio']) * 100
+    return mkt_df
+
+
+@func_count
+@timeit
 def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
     query_start_date = datetime.datetime.strptime(start_date, '%Y%m%d') + datetime.timedelta(days=-500)
     equ_df = DataAPI.MktEqudGet(secID=sec_ids, beginDate=query_start_date.strftime('%Y%m%d'), endDate=end_date,
@@ -95,7 +113,7 @@ def get_equ_mkts(sec_ids=[], start_date='20200401', end_date='20200403'):
         try:
             _df = equ_df[equ_df.secID == sec_id]
             _df.sort_values(by='tradeDate', ascending=True, inplace=True)
-            _df['annual_vol'] = _df[['chgPct']].rolling(250).apply(lambda x: x.std() * math.sqrt(250))
+            _df['annual_vol'] = _df[['chgPct']].rolling(20).apply(lambda x: x.std() * math.sqrt(250))
             _format_start_date = datetime.datetime.strptime(start_date, '%Y%m%d').strftime('%Y-%m-%d')
             _df = _df[_df.tradeDate >= _format_start_date]
             ret.update({sec_id: _df})
@@ -140,17 +158,34 @@ def get_bc_mkts(start_date='', end_date='', ticker='000832'):
                               exchangeCD=u"XSHE,XSHG", field=u"", pandas="1")
 
 
+@func_count
+@timeit
+def get_st_flag(start_date='', end_date='', ticker='000832'):
+    df = DataAPI.SecSTGet(beginDate=start_date, endDate=end_date, secID=u"", ticker=ticker, field=u"", pandas="1")
+    return df
+
+
+def get_industry_name(ticker='000832'):
+    df = DataAPI.EquIndustryGet(secID=u"", ticker=ticker, industryVersionCD=u"010303", industry=u"",
+                                industryID=u"", industryID1=u"", industryID2=u"", industryID3=u"", intoDate=u"",
+                                equTypeID=u"", field=u"", pandas="1")
+    df = df[df.isNew == 1]
+    return df
+
+
 if __name__ == "__main__":
     # df = DataAPI.BondConvPriceChgGet(secID="113503.XSHG", ticker=u"", field=u"", pandas="1")
     # print(df)
-    start_date = '20200401'
-    end_date = '20200403'
+    # df, cnt = get_conv_bond_mkts(sec_ids=['110044.XSHG'], start_date='20190103', end_date='20210618')
+    # print(df['tradeDate'])
+    start_date = '20230120'
+    end_date = '20230120'
     # 113503
     conv_bond_statics, cnt = get_conv_bond_statics(start_date=start_date, end_date=end_date)
     print(cnt)
     # sec_ids = ['113503.XSHG']
     sec_ids = list(set(conv_bond_statics['secID']))
-    sec_ids = sorted(sec_ids)[:2]
+    sec_ids = sec_ids[:10]
     # perAccrEndDate is the end day of current period,for each trade_date, begin_date in acc_infos should be trade_date
     # acc_infos = DataAPI.BondCfGet(secID=sec_ids, ticker=u"", beginDate=start_date, endDate=u"", cashTypeCD=u"",
     #                               field=u"",
@@ -158,9 +193,11 @@ if __name__ == "__main__":
     # acc_infos.sort_values(by='perAccrEndDate', inplace=True)
     # acc_infos = acc_infos.groupby('secID').agg({'perAccrEndDate': ['first']})
     # acc_info_dicts = dict(zip(list(acc_infos.index), list(acc_infos.values)))
-    acc_info_dicts = get_acc_dates(sec_ids=sec_ids, trade_date=start_date)
-    df = get_conv_bond_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
-    # print(df.head())
+    # acc_info_dicts = get_acc_dates(sec_ids=sec_ids, trade_date=start_date)
+    # df, cnt = get_conv_bond_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
+    df, cnt = get_cb_der_mkts(sec_ids=sec_ids, start_date=start_date, end_date=end_date)
+    # st_df = get_st_flag(start_date=start_date, end_date=end_date, ticker=list(df['tickerSymbolEqu']))
+    indus_df = get_industry_name(ticker=list(df['tickerSymbolEqu']))[['ticker', 'industryName1']]
     exchange_cds = [item.split('.')[1] for item in df['secID']]
     equ_sec_ids = list(set(['{0}.{1}'.format(df['tickerEqu'][idx], item) for idx, item in enumerate(exchange_cds)]))
     if not equ_sec_ids:

@@ -81,7 +81,7 @@ def get_alpha_beta(vals, bc_vals):
 
 if __name__ == '__main__':
     import numpy as np
-    from sklearn.linear_model import LinearRegression
+    # from sklearn.linear_model import LinearRegression
 
     X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
     # y = 1 * x_0 + 2 * x_1 + 3
