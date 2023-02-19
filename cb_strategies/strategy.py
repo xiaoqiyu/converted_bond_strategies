@@ -43,7 +43,6 @@ def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25):
     df = df.loc[[item < 120 for item in df['closePrice'].astype(float)]]
     df = df.loc[[item > _turn_median for item in df['turnoverRate'].astype(float)]]
 
-
     # remove ST
     st_lst = get_st_flag(start_date=trade_date, end_date=trade_date, ticker=list(df['tickerSymbolEqu']))[0]['ticker']
     df = df.loc[[item not in list(st_lst) for item in list(df['tickerSymbolEqu'])]]
@@ -54,8 +53,14 @@ def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25):
     _indus_lst = [indus_dict.get(k) for k in list(df['tickerSymbolEqu'])]
 
     df['industryName1'] = _indus_lst
-    pprint.pprint(df.iloc[:20, :][['ticker', 'secShortName',  'industryName1','closePrice']])
+    _exchange_cd = ['SZ' if item == 'XSHE' else 'SH' for item in list(df['exchangeCD'])]
+    _sec_code = ['{0}.{1}'.format(item, _exchange_cd[idx]) for idx, item in enumerate(list(df['ticker']))]
+    df['ticker'] = _sec_code
+    df = df.sort_values(by='rank', ascending=True)
+    pprint.pprint(df.iloc[:20, :][['ticker', 'secShortName', 'industryName1', 'closePrice']])
     df.to_csv('cache/mkt_{0}_rank.csv'.format(trade_date), encoding='gbk', index=False)
+    df[['ticker', 'secShortName', 'closePrice']].head(20).to_csv('cache/port_{0}.csv'.format(trade_date),
+                                                                 encoding='gbk', index=False)
 
 
 def strategy_from_wind():
@@ -91,10 +96,12 @@ def strategy_from_wind():
     df = df.loc[[float(item) > _turn_median for item in df['turn']]]
     df = df.loc[["ST" not in item for item in df['equ_name']]]
     df = df.sort_values(by='rank', ascending=True)
+    _exchange_cd = ['SZ' if item == 'XSHE' else 'SH' for item in df['exchangeCD']]
+
     df.to_csv('cache/mkt_{0}_rank.csv'.format(trade_date), encoding='gbk', index=False)
 
 
 if __name__ == '__main__':
-    trade_date = '20230120'
+    trade_date = '20230217'
     df = get_source_mkt(trade_date=trade_date)
     get_portfolio(trade_date=trade_date, df=df, equ_ratio=0.7, turn_quant=0.25)

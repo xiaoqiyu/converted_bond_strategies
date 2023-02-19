@@ -10,5 +10,5 @@
 
 
 def get_account_info():
-    return {'uqer_token': '111222'}
+    return {'uqer_token': 'e4ebad68acaaa94195c29ec63d67b77244e60e70f67a869585e14a7fe3eb8934'}
 
