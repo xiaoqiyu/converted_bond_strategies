@@ -26,7 +26,7 @@ def get_source_mkt(trade_date=''):
     return mkt_df
 
 
-def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25):
+def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25, select_in_indus=True):
     # df['pure_debt_prem'] = df['最新'] / df['纯债价值'] - 1
     df['debt_rank'] = df['puredebtPremRatio'].rank()
     df['equity_rank'] = df['bondPremRatio'].rank()
@@ -38,9 +38,14 @@ def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25):
     # df = df.loc[df['putPrice'] == np.inf]
     # df = df.loc[df['callPrice'] == np.inf]
 
+    if select_in_indus:
+        price_bc = 200
+    else:
+        price_bc = 120
+
     df = df.loc[[item > 0.5 for item in df['yearToMat'].astype(float)]]
     df = df.loc[[item > 0 for item in df['closePrice'].astype(float)]]
-    df = df.loc[[item < 120 for item in df['closePrice'].astype(float)]]
+    df = df.loc[[item < price_bc for item in df['closePrice'].astype(float)]]
     df = df.loc[[item > _turn_median for item in df['turnoverRate'].astype(float)]]
 
     # remove ST
@@ -57,10 +62,20 @@ def get_portfolio(df=None, trade_date='', equ_ratio=0.7, turn_quant=0.25):
     _sec_code = ['{0}.{1}'.format(item, _exchange_cd[idx]) for idx, item in enumerate(list(df['ticker']))]
     df['ticker'] = _sec_code
     df = df.sort_values(by='rank', ascending=True)
-    pprint.pprint(df.iloc[:20, :][['ticker', 'secShortName', 'industryName1', 'closePrice']])
-    df.to_csv('cache/mkt_{0}_rank.csv'.format(trade_date), encoding='gbk', index=False)
-    df[['ticker', 'secShortName', 'closePrice']].head(20).to_csv('cache/port_{0}.csv'.format(trade_date),
-                                                                 encoding='gbk', index=False)
+
+    if select_in_indus:
+        df_groupby_indus = df.groupby('industryName1').agg({'ticker': 'first'}).reset_index()
+        df = df.loc[[item in list(df_groupby_indus['ticker']) for item in df['ticker']]]
+        df[['ticker', 'secShortName','closePrice', 'industryName1', ]].to_csv(
+            'cache/port_{0}_indus.csv'.format(trade_date), encoding='gbk', index=False)
+    else:
+        # TODO remove hardcode, 其他方式识别风险
+        df = df[df.ticker != '128114.SZ']
+
+        pprint.pprint(df.iloc[:20, :][['ticker', 'secShortName', 'industryName1', 'closePrice']])
+        df.to_csv('cache/mkt_{0}_rank.csv'.format(trade_date), encoding='gbk', index=False)
+        df[['ticker', 'secShortName', 'closePrice', 'industryName1']].head(20).to_csv('cache/port_{0}.csv'.format(trade_date),
+                                                                     encoding='gbk', index=False)
 
 
 def strategy_from_wind():
@@ -95,6 +110,7 @@ def strategy_from_wind():
     df['turn'] = _turn
     df = df.loc[[float(item) > _turn_median for item in df['turn']]]
     df = df.loc[["ST" not in item for item in df['equ_name']]]
+
     df = df.sort_values(by='rank', ascending=True)
     _exchange_cd = ['SZ' if item == 'XSHE' else 'SH' for item in df['exchangeCD']]
 
@@ -102,6 +118,6 @@ def strategy_from_wind():
 
 
 if __name__ == '__main__':
-    trade_date = '20230217'
+    trade_date = '20230421'
     df = get_source_mkt(trade_date=trade_date)
-    get_portfolio(trade_date=trade_date, df=df, equ_ratio=0.7, turn_quant=0.25)
+    get_portfolio(trade_date=trade_date, df=df, equ_ratio=0.7, turn_quant=0.25,select_in_indus=False)
